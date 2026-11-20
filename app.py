@@ -49,6 +49,7 @@ from modules.exercise_11_7_ab import (
     calculate_case_durations,
     summarize_cases,
 )
+from modules.exercise_11_7_ce import analyze_117_ce
 
 DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 
@@ -224,6 +225,24 @@ class ImportWorker(QThread):
             self.overview_failed.emit(f"{type(error).__name__}: {error}")
 
 
+
+class Exercise117CEWorker(QThread):
+    """Menghitung Exercise 11.7 C-E di background thread."""
+
+    succeeded = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, dataframe):
+        super().__init__()
+        self.dataframe = dataframe
+
+    def run(self):
+        try:
+            self.succeeded.emit(analyze_117_ce(self.dataframe))
+        except Exception as error:
+            self.failed.emit(f"{type(error).__name__}: {error}")
+
+
 class Exercise117Worker(QThread):
     """Menghitung 11.7 A-B di background thread."""
 
@@ -265,8 +284,10 @@ class MainWindow(QMainWindow):
         self.active_data = None
         self.worker = None
         self.worker_117 = None
+        self.worker_117_ce = None
         self.case_data = None
         self.result_117 = None      # hasil analisis 11.7 A-B yang sedang tampil
+        self.result_117_ce = None   # hasil analisis 11.7 C-E milik Hana
         self._case_groups = None    # cache: case ID -> posisi baris di dataframe
 
         self.build_interface()
@@ -783,12 +804,76 @@ class MainWindow(QMainWindow):
         ) = self.create_case_table(case_panel.layout(), 300)
         layout.addWidget(case_panel)
 
-        # Placeholder bagian C-E (Hana)
-        placeholder = self.create_panel("11.7 C–E — Successful, Unsuccessful, Canceled")
-        note = QLabel("Bagian ini dikerjakan Hana dan akan ditambahkan pada halaman ini.")
-        note.setStyleSheet("color: #718096;")
-        placeholder.layout().addWidget(note)
-        layout.addWidget(placeholder)
+        # ---------------- Bagian C-E (Hana) ----------------
+        section_ce = QLabel("Bagian C–E: Successful, Unsuccessful, dan Canceled Cases")
+        section_ce.setObjectName("sectionTitle")
+        layout.addWidget(section_ce)
+
+        rules_ce = QLabel(
+            "11.7 C: case mengandung minimal satu O_Accepted (contains).  "
+            "11.7 D: case mengandung minimal satu O_Refused (contains).  "
+            "11.7 E: event terakhir pada trace harus O_Cancelled (endpoint). "
+            "Successful dan unsuccessful tidak harus saling eksklusif."
+        )
+        rules_ce.setWordWrap(True)
+        rules_ce.setStyleSheet("color: #4A5568; font-style: italic;")
+        layout.addWidget(rules_ce)
+
+        ce_actions = QHBoxLayout()
+        self.run_117_ce_button = QPushButton("Hitung 11.7 C–E")
+        self.run_117_ce_button.setEnabled(False)
+        self.run_117_ce_button.clicked.connect(self.run_exercise_117_ce)
+        ce_actions.addWidget(self.run_117_ce_button)
+
+        self.reset_117_ce_button = QPushButton("Reset C–E")
+        self.reset_117_ce_button.setEnabled(False)
+        self.reset_117_ce_button.clicked.connect(self.reset_117_ce)
+        ce_actions.addWidget(self.reset_117_ce_button)
+
+        self.export_117_ce_button = QPushButton("Export C–E to CSV")
+        self.export_117_ce_button.setEnabled(False)
+        self.export_117_ce_button.clicked.connect(self.export_117_ce_csv)
+        ce_actions.addWidget(self.export_117_ce_button)
+        layout.addLayout(ce_actions)
+
+        self.status_117_ce = QLabel("Status: Impor dataset terlebih dahulu.")
+        self.status_117_ce.setWordWrap(True)
+        self.status_117_ce.setStyleSheet("color: #718096;")
+        layout.addWidget(self.status_117_ce)
+
+        ce_metrics = QGridLayout()
+        ce_metrics.setSpacing(10)
+        self.metric_ce_success = self.create_metric_card(ce_metrics, 0, "Successful Cases")
+        self.metric_ce_success_avg = self.create_metric_card(ce_metrics, 1, "Successful Avg. Days")
+        self.metric_ce_refused = self.create_metric_card(ce_metrics, 2, "Unsuccessful Cases")
+        self.metric_ce_refused_avg = self.create_metric_card(ce_metrics, 3, "Unsuccessful Avg. Days")
+        self.metric_ce_canceled = self.create_metric_card(ce_metrics, 4, "Canceled Cases")
+        self.metric_ce_canceled_avg = self.create_metric_card(ce_metrics, 5, "Canceled Avg. Days")
+        for column in range(6):
+            ce_metrics.setColumnStretch(column, 1)
+        layout.addLayout(ce_metrics)
+
+        evidence_panel = self.create_panel(
+            "Hasil Kategori dan Bukti Event — double-click Case ID untuk melihat seluruh urutan event"
+        )
+        self.table_117_ce = QTableWidget(0, 5)
+        self.table_117_ce.setHorizontalHeaderLabels([
+            "Kategori", "Case ID", "Evidence Activity", "Timestamp", "Resource"
+        ])
+        self.table_117_ce.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.Stretch
+        )
+        self.table_117_ce.setAlternatingRowColors(True)
+        self.table_117_ce.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.table_117_ce.setSelectionBehavior(
+            QTableWidget.SelectionBehavior.SelectRows
+        )
+        self.table_117_ce.setMinimumHeight(300)
+        self.table_117_ce.doubleClicked.connect(
+            self.open_117_ce_case_detail
+        )
+        evidence_panel.layout().addWidget(self.table_117_ce)
+        layout.addWidget(evidence_panel)
 
         layout.addStretch()
 
@@ -907,10 +992,15 @@ class MainWindow(QMainWindow):
 
         # Exercise 11.7: bersihkan hasil lama, aktifkan tombol hitung
         self.reset_117(clear_status=False)
+        self.reset_117_ce(clear_status=False)
         self.run_117_button.setEnabled(True)
+        self.run_117_ce_button.setEnabled(True)
         self.status_117.setText(
             f"Status: Dataset siap ({imported['total_cases']:,} case). "
             "Klik tombol untuk menghitung."
+        )
+        self.status_117_ce.setText(
+            f"Status: Dataset siap ({imported['total_cases']:,} case). Klik Hitung 11.7 C–E."
         )
 
     def import_failed(self, message):
@@ -1173,6 +1263,170 @@ class MainWindow(QMainWindow):
         )
 
     # ------------------------------------------------------------------
+
+    # ------------------------------------------------------------------
+    # EXERCISE 11.7 C-E HANDLERS (Hana)
+    # ------------------------------------------------------------------
+    def run_exercise_117_ce(self):
+        if self.active_data is None:
+            QMessageBox.warning(self, "Dataset Belum Ada", "Impor dataset XES terlebih dahulu.")
+            return
+
+        self.run_117_ce_button.setEnabled(False)
+        self.reset_117_ce_button.setEnabled(False)
+        self.export_117_ce_button.setEnabled(False)
+        self.status_117_ce.setText(
+            "Status: Menghitung successful, unsuccessful, dan canceled cases..."
+        )
+
+        dataframe = self.active_data["import"]["dataframe"]
+        self.worker_117_ce = Exercise117CEWorker(dataframe)
+        self.worker_117_ce.succeeded.connect(self.on_117_ce_succeeded)
+        self.worker_117_ce.failed.connect(self.on_117_ce_failed)
+        self.worker_117_ce.finished.connect(self.on_117_ce_finished)
+        self.worker_117_ce.start()
+
+    def on_117_ce_succeeded(self, result):
+        self.result_117_ce = result
+        categories = [
+            ("successful", "Successful"),
+            ("unsuccessful", "Unsuccessful"),
+            ("canceled", "Canceled"),
+        ]
+
+        self.table_117_ce.setRowCount(0)
+        for key, category_name in categories:
+            item = result[key]
+            summary = item["summary"]
+            average = summary["average_cycle_time_days"]
+
+            if key == "successful":
+                count_label, avg_label = self.metric_ce_success, self.metric_ce_success_avg
+            elif key == "unsuccessful":
+                count_label, avg_label = self.metric_ce_refused, self.metric_ce_refused_avg
+            else:
+                count_label, avg_label = self.metric_ce_canceled, self.metric_ce_canceled_avg
+
+            count_label.setText(f"{summary['total_cases']:,}")
+            avg_label.setText(f"{average:.2f}" if average is not None else "N/A")
+
+            # Satu tabel memuat kategori, Case ID, dan bukti event.
+            # Case ID dapat di-double-click untuk membuka seluruh trace.
+            for _, event in item["evidence"].iterrows():
+                row = self.table_117_ce.rowCount()
+                self.table_117_ce.insertRow(row)
+
+                case_id = str(event[CASE_COLUMN])
+                values = [
+                    category_name,
+                    case_id,
+                    str(event["concept:name"]),
+                    str(event[TIMESTAMP_COLUMN]) if pd_not_null(event[TIMESTAMP_COLUMN]) else "",
+                    str(event["org:resource"]) if pd_not_null(event["org:resource"]) else "",
+                ]
+                for column, value in enumerate(values):
+                    cell = QTableWidgetItem(value)
+                    if column == 1:
+                        cell.setData(Qt.ItemDataRole.UserRole, case_id)
+                        cell.setToolTip("Double-click untuk membuka seluruh urutan event case ini.")
+                    self.table_117_ce.setItem(row, column, cell)
+
+        self.status_117_ce.setText(
+            "Status: Selesai. Setiap case dihitung satu kali per kategori; "
+        )
+        self.export_117_ce_button.setEnabled(True)
+        self.reset_117_ce_button.setEnabled(True)
+
+    def open_117_ce_case_detail(self, index):
+        """Buka seluruh urutan event untuk Case ID yang dipilih."""
+        if self.active_data is None or not index.isValid():
+            return
+
+        case_item = self.table_117_ce.item(index.row(), 1)
+        if case_item is None:
+            return
+
+        case_id = case_item.data(Qt.ItemDataRole.UserRole)
+        dataframe = self.active_data["import"]["dataframe"]
+        events = dataframe.loc[dataframe[CASE_COLUMN].astype(str) == str(case_id)].copy()
+
+        if events.empty:
+            QMessageBox.information(
+                self, "Case Tidak Ditemukan",
+                f"Data untuk Case ID {case_id} tidak ditemukan pada dataset aktif."
+            )
+            return
+
+        # Gunakan urutan timestamp stabil; timestamp sama mempertahankan urutan XES.
+        events = events.sort_values(
+            TIMESTAMP_COLUMN, kind="stable", na_position="last"
+        )
+        CaseDetailDialog(self, case_id, events).exec()
+
+    def on_117_ce_failed(self, message):
+        self.status_117_ce.setText("Status: Analisis 11.7 C–E gagal.")
+        QMessageBox.critical(self, "Analisis 11.7 C–E Gagal", message)
+
+    def on_117_ce_finished(self):
+        self.run_117_ce_button.setEnabled(self.active_data is not None)
+
+    def reset_117_ce(self, clear_status=True):
+        self.result_117_ce = None
+        for label in (
+            self.metric_ce_success, self.metric_ce_success_avg,
+            self.metric_ce_refused, self.metric_ce_refused_avg,
+            self.metric_ce_canceled, self.metric_ce_canceled_avg,
+        ):
+            label.setText("-")
+        self.table_117_ce.setRowCount(0)
+        self.reset_117_ce_button.setEnabled(False)
+        self.export_117_ce_button.setEnabled(False)
+        if clear_status:
+            self.status_117_ce.setText(
+                "Status: Impor dataset terlebih dahulu."
+                if self.active_data is None
+                else "Status: Hasil C–E direset. Klik tombol untuk menghitung ulang."
+            )
+
+    def export_117_ce_csv(self):
+        if self.result_117_ce is None:
+            QMessageBox.warning(self, "Belum Ada Data", "Jalankan analisis terlebih dahulu.")
+            return
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Simpan Evidence 11.7 C-E", "hasil_11_7_ce.csv", "CSV Files (*.csv)"
+        )
+        if not file_path:
+            return
+
+        rows = []
+        for key, label in (
+            ("successful", "11.7 C — Successful"),
+            ("unsuccessful", "11.7 D — Unsuccessful"),
+            ("canceled", "11.7 E — Canceled"),
+        ):
+            item = self.result_117_ce[key]
+            summary = item["summary"]
+            for _, event in item["evidence"].iterrows():
+                rows.append({
+                    "Kategori": label,
+                    "Jumlah case kategori": summary["total_cases"],
+                    "Rata-rata cycle time (hari)": summary["average_cycle_time_days"],
+                    "Case ID": event[CASE_COLUMN],
+                    "Timestamp evidence": event[TIMESTAMP_COLUMN],
+                    "Activity evidence": event["concept:name"],
+                    "Resource": event["org:resource"],
+                    "Aturan": item["rule"],
+                })
+
+        try:
+            pd.DataFrame(rows).to_csv(Path(file_path).with_suffix(".csv"), index=False)
+        except Exception as error:
+            QMessageBox.critical(self, "Gagal", f"Gagal menyimpan CSV: {error}")
+            return
+
+        QMessageBox.information(self, "Sukses", "Evidence 11.7 C–E berhasil diekspor.")
+
     # ABOUT
     # ------------------------------------------------------------------
     def show_about(self):
