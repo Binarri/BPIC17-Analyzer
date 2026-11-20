@@ -1,33 +1,52 @@
 # BPIC17 Analyzer
 
-Desktop application for event log analysis using Python, PM4Py, PySide6, and Matplotlib.
+**Aplikasi Desktop untuk Analisis Event Log BPI Challenge 2017**
 
-## Features
+BPIC17 Analyzer merupakan aplikasi desktop yang dikembangkan menggunakan Python dan PM4Py untuk melakukan analisis terhadap event log BPI Challenge 2017 (BPIC17) dalam format XES.
 
-### F01 - Dataset Import and Validation
-- Import event logs in XES format.
-- Validate required event attributes.
-- Detect optional attributes.
-- Display dataset information.
-- Handle invalid or incomplete timestamps.
+Aplikasi ini dikembangkan sebagai proyek kelompok untuk menjawab latihan pada Bab 11 materi *Fundamentals of Business Process Management (FBPM)*. Analisis dilakukan secara dinamis berdasarkan dataset yang diimpor pengguna, kemudian hasilnya ditampilkan melalui antarmuka grafis.
 
-### F02 - Event Log Overview
-- Display total cases and events.
-- Display activity frequency.
-- Visualize the 15 most frequent activities.
-- Display event log date range.
-- Calculate average cycle time.
-- Display duration for each case.
-- Search cases using Case ID.
+## Tujuan Proyek
 
-## Technologies
-- Python
-- PM4Py
-- Pandas
-- PySide6
-- Matplotlib
+1. Mengimpor dan memvalidasi event log dalam format XES.
+2. Menampilkan informasi umum dan statistik dasar event log.
+3. Menghitung hasil latihan berdasarkan aturan analisis yang telah ditentukan.
+4. Menampilkan daftar case dan bukti event yang mendasari hasil analisis.
+5. Menyediakan aplikasi desktop yang dapat digunakan untuk mengeksplorasi dan menganalisis event log.
 
-## Project Structure
+## Cakupan Fitur
+
+| Kode | Fitur | Deskripsi |
+|---|---|---|
+| F01 | Impor dan Validasi Event Log | Mengimpor file XES, memvalidasi atribut wajib, dan mendeteksi atribut opsional. |
+| F02 | Event Log Overview | Menampilkan jumlah case, event, frekuensi aktivitas, rentang waktu, dan rata-rata cycle time. |
+| F03 | Exercise 11.7 A–E | Menganalisis jumlah case, cycle time, successful, unsuccessful, dan canceled cases. |
+| F04 | Repeated Activity (11.15) | Mengidentifikasi case dengan aktivitas W_Assess Potential Fraud berstatus complete minimal dua kali. |
+| F05 | Same Resource (11.18) | Mengidentifikasi pengulangan aktivitas complete yang dilakukan oleh resource yang sama. |
+| F06 | Event Ordering (11.22) | Mengidentifikasi case dengan O_Cancelled yang kemudian diikuti O_Accepted. |
+| F07 | Case Explorer dan Ekspor | Menampilkan detail case, urutan event, pencarian case, bukti analisis, dan ekspor hasil. |
+
+## Pembagian Tugas Anggota
+
+| Anggota | Tanggung Jawab | Cakupan |
+|---|---|---|
+| Binar | Impor XES, validasi, dan Event Log Overview | F01–F02 |
+| Tiwi | Analisis jumlah case dan cycle time | Exercise 11.7 A–B |
+| Hana | Analisis successful, unsuccessful, dan canceled cases | Exercise 11.7 C–E |
+| Annis | Analisis repeated complete dan same resource | Exercise 11.15 dan 11.18 |
+| Kayla | Analisis event ordering dan Case Explorer | Exercise 11.22 dan F07 |
+
+## Teknologi yang Digunakan
+
+| Teknologi | Kegunaan |
+|---|---|
+| Python | Bahasa pemrograman utama |
+| PM4Py | Membaca dan memproses event log XES |
+| Pandas | Pengolahan dan analisis data |
+| PySide6 | Pembuatan antarmuka aplikasi desktop |
+| Matplotlib | Visualisasi statistik dan aktivitas |
+
+## Struktur Proyek
 
 ```text
 BPIC17-Analyzer/
@@ -35,49 +54,100 @@ BPIC17-Analyzer/
 ├── requirements.txt
 ├── README.md
 ├── .gitignore
-└── modules/
-    ├── __init__.py
-    ├── importer.py
-    └── overview.py
+│
+├── modules/
+│   ├── __init__.py
+│   ├── importer.py
+│   ├── overview.py
+│   └── ...
+│
+└── assets/
+    └── ...
 ```
 
-## Installation
+Keterangan:
+- `app.py`: Aplikasi utama dan penghubung antarmodul.
+- `requirements.txt`: Daftar dependency yang diperlukan.
+- `modules/`: Tempat penyimpanan modul analisis setiap anggota.
+- `assets/`: Tempat penyimpanan aset aplikasi apabila diperlukan.
 
-1. Clone this repository.
+File dan submodul tambahan akan dimasukkan sesuai perkembangan implementasi masing-masing fitur.
+
+## Instalasi
+
+### 1. Clone repository
 
 ```bash
-git clone YOUR_REPOSITORY_URL
+git clone https://github.com/Binarri/BPIC17-Analyzer
 cd BPIC17-Analyzer
 ```
 
-2. Create a virtual environment.
+### 2. Buat virtual environment
 
 ```bash
 python -m venv .venv
 ```
 
-3. Activate the environment.
+### 3. Aktifkan virtual environment
 
-Windows:
+Windows PowerShell:
 
-```bash
-.venv\Scripts\activate
+```powershell
+.venv\Scripts\Activate.ps1
 ```
 
-4. Install dependencies.
+Windows Command Prompt:
+
+```cmd
+.venv\Scripts\activate.bat
+```
+
+### 4. Instal dependency
 
 ```bash
 pip install -r requirements.txt
 ```
 
-## Run Application
+## Menjalankan Aplikasi
+
+Jalankan perintah berikut dari direktori utama proyek:
 
 ```bash
 python app.py
 ```
 
-Select an XES dataset through the Choose XES File button.
+Setelah aplikasi terbuka, pengguna dapat mengimpor dataset BPIC17 berformat `.xes` melalui menu Dataset. Hasil analisis akan ditampilkan berdasarkan fitur yang telah diimplementasikan.
 
 ## Dataset
 
-Provide your own XES event log dataset. Dataset files are not included in this repository.
+Proyek ini menggunakan dataset **BPI Challenge 2017 (BPIC17)** dalam format `.xes`.
+
+- [BPI Challenge 2017 – 4TU.ResearchData](https://data.4tu.nl/articles/dataset/BPI_Challenge_2017/12696884)
+
+## Ketentuan Analisis
+
+Beberapa ketentuan yang digunakan dalam pengembangan aplikasi:
+
+- Seluruh hasil analisis dihitung berdasarkan dataset XES yang sedang aktif.
+- Jumlah case dihitung berdasarkan case ID unik, bukan jumlah event.
+- Cycle time dihitung dari timestamp event terakhir dikurangi timestamp event pertama pada setiap case.
+- Filter contains digunakan untuk memilih case yang memiliki aktivitas tertentu.
+- Filter endpoint digunakan untuk memilih case berdasarkan aktivitas terakhir dalam trace.
+- Pengulangan aktivitas hanya dihitung berdasarkan lifecycle complete sesuai ketentuan soal.
+- Analisis same resource mensyaratkan resource yang sama dan teridentifikasi.
+- Analisis eventually follows memperhatikan urutan event dalam trace, tanpa mengharuskan kedua event bersebelahan.
+
+## Pengujian
+
+Pengujian dilakukan menggunakan dataset BPIC17 dan skenario log sintetis untuk memeriksa ketepatan aturan analisis.
+
+Beberapa skenario yang perlu diuji:
+
+1. Case memiliki aktivitas O_Accepted lebih dari satu kali.
+2. O_Cancelled muncul di tengah trace dan masih diikuti event lainnya.
+3. Case memiliki O_Refused sekaligus O_Accepted.
+4. Aktivitas target memiliki beberapa occurrence, tetapi hanya satu yang berstatus complete.
+5. Dua complete occurrence dilakukan oleh resource berbeda.
+6. Dua complete occurrence dilakukan oleh resource yang sama.
+7. O_Cancelled diikuti aktivitas lain sebelum O_Accepted.
+

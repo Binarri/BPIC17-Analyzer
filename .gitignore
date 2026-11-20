@@ -1,24 +1,24 @@
-
 # Python
 __pycache__/
 *.py[cod]
-*.pycache
+*.pyo
 
 # Virtual environment
-venv/
 .venv/
+venv/
 env/
 
 # IDE
 .vscode/
 .idea/
 
-# Dataset
-*.xes
-*.xes.gz
-datasets/
-data/
-
 # OS
 .DS_Store
 Thumbs.db
+
+# Dataset
+*.xes
+*.xes.gz
+
+# Temporary files
+*.log
