@@ -21,4 +21,4 @@ Thumbs.db
 *.xes.gz
 
 # Temporary files
-*.log
+*.loghasil_*.csv
