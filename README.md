@@ -163,16 +163,3 @@ Beberapa skenario yang perlu diuji:
 5. Dua complete occurrence dilakukan oleh resource berbeda.
 6. Dua complete occurrence dilakukan oleh resource yang sama.
 7. O_Cancelled diikuti aktivitas lain sebelum O_Accepted.
-
-
-
-## Catatan Integrasi Exercise 11.7 C–E
-
-Modul `modules/exercise_11_7_ce.py` mengerjakan:
-- 11.7 C: case yang mengandung minimal satu `O_Accepted`.
-- 11.7 D: case yang mengandung minimal satu `O_Refused`.
-- 11.7 E: case dengan `O_Cancelled` sebagai event terakhir pada trace.
-
-Modul Hana menggunakan fungsi `calculate_case_durations()` dan `summarize_cases()` dari modul Tiwi agar definisi cycle time konsisten. Hasil C–E menampilkan jumlah case, rata-rata cycle time, daftar case ID, dan evidence event. Panelnya tersedia pada halaman Exercise 11.7 dan hasil evidence dapat diekspor ke CSV.
-
-Pembagian anggota pada README mengikuti pembagian final kelompok: Binar (F01–F02), Tiwi (11.7 A–B), Hana (11.7 C–E), Annis (11.15 dan 11.18), serta Kayla (11.22 dan Case Explorer).
