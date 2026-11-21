@@ -57,6 +57,7 @@ from modules.exercise_11_15_18 import (
     detect_target_activity,
     list_activities,
 )
+from modules.exercise_11_22 import analyze_1122
 
 DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 
@@ -267,6 +268,21 @@ class Exercise1518Worker(QThread):
         except Exception as error:
             self.failed.emit(f"{type(error).__name__}: {error}")
 
+class Exercise1122Worker(QThread):
+    """Menghitung Exercise 11.22 di background thread (Kayla)."""
+
+    succeeded = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, dataframe):
+        super().__init__()
+        self.dataframe = dataframe
+
+    def run(self):
+        try:
+            self.succeeded.emit(analyze_1122(self.dataframe))
+        except Exception as error:
+            self.failed.emit(f"{type(error).__name__}: {error}")
 
 class Exercise117Worker(QThread):
     """Menghitung 11.7 A-B di background thread."""
@@ -315,6 +331,8 @@ class MainWindow(QMainWindow):
         self.result_117_ce = None   # hasil analisis 11.7 C-E milik Hana
         self.worker_1518 = None
         self.result_1518 = None     # hasil analisis 11.15 & 11.18 milik Annis
+        self.worker_1122 = None
+        self.result_1122 = None     
         self._case_groups = None    # cache: case ID -> posisi baris di dataframe
 
         self.build_interface()
@@ -360,15 +378,8 @@ class MainWindow(QMainWindow):
         self.nav_dataset.clicked.connect(lambda: self.show_page(1))
         self.nav_117.clicked.connect(lambda: self.show_page(2))
         self.nav_1518.clicked.connect(lambda: self.show_page(3))
-
-        # Fitur anggota lain (diaktifkan saat modulnya digabung)
-        placeholders = (
-            (self.nav_1122, "Reserved: Exercise 11.22 (Kayla)"),
-            (self.nav_explorer, "Reserved: Case Explorer (Kayla)"),
-        )
-        for button, tooltip in placeholders:
-            button.setEnabled(False)
-            button.setToolTip(tooltip)
+        self.nav_1122.clicked.connect(lambda: self.show_page(4))
+        self.nav_explorer.clicked.connect(lambda: self.show_page(5))
 
         for button in (
             self.nav_overview,
@@ -403,11 +414,15 @@ class MainWindow(QMainWindow):
         self.dataset_page = self.create_dataset_page()
         self.exercise_117_page = self.create_exercise_117_page()
         self.exercise_1518_page = self.create_exercise_1518_page()
+        self.exercise_1122_page = self.create_exercise_1122_page()
+        self.case_explorer_page = self.create_case_explorer_page()
 
         self.pages.addWidget(self.overview_page)       # index 0
         self.pages.addWidget(self.dataset_page)        # index 1
         self.pages.addWidget(self.exercise_117_page)   # index 2
         self.pages.addWidget(self.exercise_1518_page)  # index 3
+        self.pages.addWidget(self.exercise_1122_page)  # index 4
+        self.pages.addWidget(self.case_explorer_page)  # index 5
 
         body.addWidget(self.pages, 1)
         root.addLayout(body)
@@ -585,6 +600,8 @@ class MainWindow(QMainWindow):
         self.nav_dataset.setChecked(index == 1)
         self.nav_117.setChecked(index == 2)
         self.nav_1518.setChecked(index == 3)
+        self.nav_1122.setChecked(index == 4)
+        self.nav_explorer.setChecked(index == 5)
 
     # ------------------------------------------------------------------
     # KOMPONEN BERSAMA
@@ -1115,6 +1132,474 @@ class MainWindow(QMainWindow):
         return page
 
     # ------------------------------------------------------------------
+    # EXERCISE 11.22 PAGE - Kayla
+    # ------------------------------------------------------------------
+    def create_exercise_1122_page(self):
+        page = QWidget()
+
+        page_layout = QVBoxLayout(page)
+        page_layout.setContentsMargins(22, 20, 22, 20)
+        page_layout.setSpacing(12)
+
+        heading = QLabel("Exercise 11.22")
+        heading.setStyleSheet("font-size: 19px; font-weight: bold;")
+        page_layout.addWidget(heading)
+
+        description = QLabel(
+            "Mencari case yang memiliki O_Cancelled kemudian O_Accepted "
+            "dalam trace yang sama."
+        )
+        description.setWordWrap(True)
+        page_layout.addWidget(description)
+
+        rule = QLabel(
+            "Aturan: O_Cancelled harus terjadi lebih dahulu daripada O_Accepted. "
+            "Kedua event tidak harus berurutan langsung."
+        )
+        rule.setWordWrap(True)
+        rule.setStyleSheet(
+            "color: #4A5568; background: #E9EEF5; "
+            "padding: 10px; border-radius: 6px;"
+        )
+        page_layout.addWidget(rule)
+
+        # ---------------- ACTIONS ----------------
+        action_layout = QHBoxLayout()
+
+        self.run_1122_button = QPushButton("Hitung 11.22")
+        self.run_1122_button.clicked.connect(self.run_exercise_1122)
+
+        self.reset_1122_button = QPushButton("Reset")
+        self.reset_1122_button.clicked.connect(self.reset_1122)
+        self.reset_1122_button.setEnabled(False)
+
+        self.export_1122_button = QPushButton("Export CSV")
+        self.export_1122_button.clicked.connect(self.export_1122_csv)
+        self.export_1122_button.setEnabled(False)
+
+        action_layout.addWidget(self.run_1122_button)
+        action_layout.addWidget(self.reset_1122_button)
+        action_layout.addWidget(self.export_1122_button)
+        action_layout.addStretch()
+
+        page_layout.addLayout(action_layout)
+
+        # ---------------- STATUS ----------------
+        self.progress_1122 = QProgressBar()
+        self.progress_1122.setRange(0, 1)
+        self.progress_1122.setValue(0)
+        self.progress_1122.setVisible(False)
+        page_layout.addWidget(self.progress_1122)
+
+        self.status_1122 = QLabel("Status: Impor dataset terlebih dahulu.")
+        self.status_1122.setWordWrap(True)
+        page_layout.addWidget(self.status_1122)
+
+        # ---------------- METRICS ----------------
+        metrics = QGridLayout()
+        metrics.setSpacing(10)
+
+        self.metric_1122_matched = self.create_metric_card(
+            metrics, 0, "Case Memenuhi 11.22"
+        )
+        self.metric_1122_total = self.create_metric_card(
+            metrics, 1, "Total Active Cases"
+        )
+        self.metric_1122_percentage = self.create_metric_card(
+            metrics, 2, "Persentase"
+        )
+
+        self.metric_1122_matched.setText("-")
+        self.metric_1122_total.setText("-")
+        self.metric_1122_percentage.setText("-")
+
+        page_layout.addLayout(metrics)
+
+        # ---------------- EVIDENCE ----------------
+        panel = self.create_panel(
+            "Bukti Case — O_Cancelled kemudian O_Accepted "
+            "(double-click untuk melihat seluruh trace)"
+        )
+
+        self.table_1122_cases = self.create_simple_table(
+            [
+                "Case ID",
+                "O_Cancelled Timestamp",
+                "O_Accepted Timestamp",
+            ],
+            350,
+            self.open_1122_case_detail,
+        )
+
+        panel.layout().addWidget(self.table_1122_cases)
+        page_layout.addWidget(panel)
+
+        page_layout.addStretch()
+
+        self.run_1122_button.setEnabled(False)
+
+        return page
+
+    # ------------------------------------------------------------------
+    # CASE EXPLORER HANDLERS - Kayla
+    # ------------------------------------------------------------------
+    def filter_case_explorer(self, search_text):
+        search_text = search_text.strip().lower()
+
+        for row in range(self.case_explorer_table.rowCount()):
+            item = self.case_explorer_table.item(row, 0)
+
+            if item is not None:
+                case_id = item.text().lower()
+
+                self.case_explorer_table.setRowHidden(
+                    row,
+                    search_text not in case_id
+                )
+
+    def open_case_explorer_detail(self, index):
+        if self.active_data is None or not index.isValid():
+            return
+
+        item = self.case_explorer_table.item(index.row(), 0)
+
+        if item is not None:
+            self.open_case_detail(item.text())
+
+    def export_case_explorer_csv(self):
+        if self.active_data is None:
+            QMessageBox.warning(
+                self,
+                "Dataset Belum Ada",
+                "Impor dataset XES terlebih dahulu.",
+            )
+            return
+
+        case_ids = list(self.get_case_groups().keys())
+
+        matched_cases = set()
+
+        if self.result_1122 is not None:
+            matched_cases = set(self.result_1122["case_ids"])
+
+        statuses = []
+
+        for case_id in case_ids:
+            if self.result_1122 is None:
+                status = "Belum Dianalisis"
+            elif case_id in matched_cases:
+                status = "Memenuhi"
+            else:
+                status = "Tidak Memenuhi"
+
+            statuses.append(status)
+
+        export_dataframe = pd.DataFrame({
+            "Case ID": case_ids,
+            "Status 11.22": statuses,
+        })
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Daftar Case",
+            "case_explorer.csv",
+            "CSV Files (*.csv)",
+        )
+
+        if not file_path:
+            return
+
+        export_dataframe.to_csv(
+            file_path,
+            index=False,
+            encoding="utf-8-sig",
+        )
+
+        QMessageBox.information(
+            self,
+            "Export Berhasil",
+            f"Daftar {len(case_ids):,} case berhasil diekspor.",
+        )
+
+    # ------------------------------------------------------------------
+    # EXERCISE 11.22 HANDLERS (Kayla)
+    # ------------------------------------------------------------------
+    def run_exercise_1122(self):
+        if self.active_data is None:
+            QMessageBox.warning(
+                self,
+                "Dataset Belum Ada",
+                "Impor dataset XES terlebih dahulu.",
+            )
+            return
+
+        self.reset_1122(clear_status=False)
+        self.run_1122_button.setEnabled(False)
+        self.progress_1122.setVisible(True)
+        self.progress_1122.setRange(0, 0)
+        self.status_1122.setText(
+            "Status: Menghitung case O_Cancelled kemudian O_Accepted..."
+        )
+
+        dataframe = self.active_data["import"]["dataframe"]
+
+        self.worker_1122 = Exercise1122Worker(dataframe)
+        self.worker_1122.succeeded.connect(self.on_1122_succeeded)
+        self.worker_1122.failed.connect(self.on_1122_failed)
+        self.worker_1122.finished.connect(self.on_1122_finished)
+        self.worker_1122.start()
+
+    def on_1122_succeeded(self, result):
+        self.result_1122 = result
+        self.load_case_explorer()
+
+        summary = result["summary"]
+        evidence = result["evidence"]
+
+        self.metric_1122_matched.setText(
+            f"{summary['matched_cases']:,}"
+        )
+        self.metric_1122_total.setText(
+            f"{summary['total_cases']:,}"
+        )
+        self.metric_1122_percentage.setText(
+            f"{summary['percentage']:.2f}%"
+        )
+
+        timestamps_cancelled = format_datetime_series(
+            evidence["cancelled_timestamp"]
+        ).tolist()
+
+        timestamps_accepted = format_datetime_series(
+            evidence["accepted_timestamp"]
+        ).tolist()
+
+        self.fill_table(
+            self.table_1122_cases,
+            [
+                [
+                    str(row[CASE_COLUMN]),
+                    cancelled_timestamp,
+                    accepted_timestamp,
+                ]
+                for row, cancelled_timestamp, accepted_timestamp in zip(
+                    evidence.to_dict("records"),
+                    timestamps_cancelled,
+                    timestamps_accepted,
+                )
+            ],
+        )
+
+        if self.table_1122_cases.rowCount():
+            self.table_1122_cases.selectRow(0)
+
+        self.status_1122.setText(
+            f"Status: Selesai. Ditemukan {summary['matched_cases']:,} "
+            f"case dari {summary['total_cases']:,} active cases "
+            f"({summary['percentage']:.2f}%) yang memiliki "
+            "O_Cancelled sebelum O_Accepted."
+        )
+
+        self.export_1122_button.setEnabled(True)
+
+    def open_1122_case_detail(self, index):
+        if self.active_data is None or not index.isValid():
+            return
+
+        table = self.sender()
+        item = table.item(index.row(), 0) if table is not None else None
+
+        if item is not None:
+            self.open_case_detail(item.text())
+
+    def on_1122_failed(self, message):
+        self.status_1122.setText("Status: Analisis 11.22 gagal.")
+        QMessageBox.critical(
+            self,
+            "Analisis 11.22 Gagal",
+            message,
+        )
+
+    def on_1122_finished(self):
+        self.progress_1122.setVisible(False)
+        self.progress_1122.setRange(0, 1)
+
+        self.run_1122_button.setEnabled(
+            self.active_data is not None
+        )
+
+        self.reset_1122_button.setEnabled(
+            self.result_1122 is not None
+        )
+
+    def reset_1122(self, clear_status=True):
+        """Reset hasil 11.22 tanpa menghapus dataset aktif."""
+        self.result_1122 = None
+
+        if self.active_data is not None:
+            self.load_case_explorer()
+
+        self.metric_1122_matched.setText("-")
+        self.metric_1122_total.setText("-")
+        self.metric_1122_percentage.setText("-")
+
+        self.table_1122_cases.setRowCount(0)
+
+        self.export_1122_button.setEnabled(False)
+        self.reset_1122_button.setEnabled(False)
+
+        if clear_status:
+            self.status_1122.setText(
+                "Status: Impor dataset terlebih dahulu."
+                if self.active_data is None
+                else "Status: Hasil direset. Klik Hitung 11.22 untuk menghitung ulang."
+            )
+
+    def export_1122_csv(self):
+        if self.result_1122 is None:
+            QMessageBox.warning(
+                self,
+                "Belum Ada Data",
+                "Jalankan analisis 11.22 terlebih dahulu.",
+            )
+            return
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Simpan Hasil 11.22",
+            "hasil_11_22.csv",
+            "CSV Files (*.csv)",
+        )
+
+        if not file_path:
+            return
+
+        summary_path = Path(file_path)
+        evidence_path = summary_path.with_name(
+            summary_path.stem + "_evidence.csv"
+        )
+
+        result = self.result_1122
+        summary = result["summary"]
+
+        summary_dataframe = pd.DataFrame([
+            {
+                "rule": result["rule"],
+                "matched_cases": summary["matched_cases"],
+                "total_active_cases": summary["total_cases"],
+                "percentage": summary["percentage"],
+            }
+        ])
+
+        summary_dataframe.to_csv(
+            summary_path,
+            index=False,
+            encoding="utf-8-sig",
+        )
+
+        result["evidence"].to_csv(
+            evidence_path,
+            index=False,
+            encoding="utf-8-sig",
+        )
+
+        QMessageBox.information(
+            self,
+            "Export Berhasil",
+            f"Hasil 11.22 berhasil disimpan.\n\n"
+            f"Ringkasan: {summary_path.name}\n"
+            f"Bukti case: {evidence_path.name}",
+        )
+
+    # ------------------------------------------------------------------
+    # CASE EXPLORER PAGE - Kayla
+    # ------------------------------------------------------------------
+    def create_case_explorer_page(self):
+        page = QWidget()
+
+        page_layout = QVBoxLayout(page)
+        page_layout.setContentsMargins(22, 20, 22, 20)
+        page_layout.setSpacing(12)
+
+        heading = QLabel("Case Explorer")
+        heading.setStyleSheet("font-size: 19px; font-weight: bold;")
+        page_layout.addWidget(heading)
+
+        description = QLabel(
+            "Digunakan untuk mencari dan melihat detail case "
+            "dari event log yang sedang aktif."
+        )
+        description.setWordWrap(True)
+        page_layout.addWidget(description)
+
+        # ---------------- SEARCH ----------------
+        search_layout = QHBoxLayout()
+
+        search_label = QLabel("Cari Case ID:")
+        self.case_explorer_search = QLineEdit()
+        self.case_explorer_search.setPlaceholderText(
+            "Masukkan Case ID..."
+        )
+
+        self.case_explorer_search.textChanged.connect(
+            self.filter_case_explorer
+        )
+
+        self.export_case_explorer_button = QPushButton("Export CSV")
+        self.export_case_explorer_button.clicked.connect(
+            self.export_case_explorer_csv
+        )
+        self.export_case_explorer_button.setEnabled(False)
+
+        search_layout.addWidget(search_label)
+        search_layout.addWidget(self.case_explorer_search)
+        search_layout.addWidget(self.export_case_explorer_button)
+
+        page_layout.addLayout(search_layout)
+
+        # ---------------- CASE TABLE ----------------
+        panel = self.create_panel("Daftar Case")
+
+        self.case_explorer_table = self.create_simple_table(
+            ["Case ID", "Status 11.22"],
+            400,
+            self.open_case_explorer_detail,
+        )
+
+        panel.layout().addWidget(self.case_explorer_table)
+        page_layout.addWidget(panel)
+
+        page_layout.addStretch()
+
+        return page
+
+    def load_case_explorer(self):
+        if self.active_data is None:
+            return
+
+        dataframe = self.active_data["import"]["dataframe"]
+        case_ids = dataframe[CASE_COLUMN].dropna().unique()
+
+        matched_cases = set()
+
+        if self.result_1122 is not None:
+            matched_cases = set(self.result_1122["case_ids"])
+
+        rows = []
+
+        for case_id in case_ids:
+            if self.result_1122 is None:
+                status = "Belum Dianalisis"
+            elif case_id in matched_cases:
+                status = "Memenuhi"
+            else:
+                status = "Tidak Memenuhi"
+
+            rows.append([str(case_id), status])
+
+        self.fill_table(self.case_explorer_table, rows)
+
+    # ------------------------------------------------------------------
     # DATASET PAGE - F01
     # ------------------------------------------------------------------
     def create_dataset_page(self):
@@ -1200,6 +1685,7 @@ class MainWindow(QMainWindow):
 
     def import_succeeded(self, imported):
         self.active_data = {"import": imported, "overview": None}
+        self.load_case_explorer()
         self._case_groups = None  # cache lama tidak berlaku untuk dataset baru
 
         self.file_label.setText(f"Active Dataset: {imported['file_name']}")
@@ -1226,6 +1712,13 @@ class MainWindow(QMainWindow):
         # Exercise 11.7: bersihkan hasil lama, aktifkan tombol hitung
         self.reset_117(clear_status=False)
         self.reset_117_ce(clear_status=False)
+
+        self.reset_1122(clear_status=False)
+        self.run_1122_button.setEnabled(True)
+        self.status_1122.setText(
+            "Status: Dataset siap. Klik Hitung 11.22 untuk menjalankan analisis."
+        )
+        
         self.run_117_button.setEnabled(True)
         self.run_117_ce_button.setEnabled(True)
         self.status_117.setText(
@@ -1238,6 +1731,8 @@ class MainWindow(QMainWindow):
 
         # Exercise 11.15 & 11.18: isi daftar aktivitas, deteksi target otomatis
         self.prepare_1518(imported)
+
+        self.export_case_explorer_button.setEnabled(True)
 
     def import_failed(self, message):
         self.status_label.setText("Status: Import failed")
