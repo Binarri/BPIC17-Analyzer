@@ -13,6 +13,7 @@ from PySide6.QtCore import (
     Signal,
     Qt,
 )
+from PySide6.QtGui import QFont, QFontMetrics
 from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -350,7 +351,7 @@ class MainWindow(QMainWindow):
 
         self.nav_overview = QPushButton("Overview")
         self.nav_117 = QPushButton("Exercise 11.7")
-        self.nav_1518 = QPushButton("Exercise 11.15 & 11.18")
+        self.nav_1518 = QPushButton("Exercise 11.15 && 11.18")  # && = '&' literal
         self.nav_1122 = QPushButton("Exercise 11.22")
         self.nav_explorer = QPushButton("Case Explorer")
         self.nav_dataset = QPushButton("Dataset")
@@ -379,6 +380,12 @@ class MainWindow(QMainWindow):
         ):
             button.setObjectName("navButton")
             button.setCheckable(True)
+            # Tombol aktif memakai teks bold; beri lebar minimum agar teks tidak terpotong.
+            bold = QFont("Segoe UI", 9)
+            bold.setBold(True)
+            label = button.text().replace("&&", "&")
+            text_width = QFontMetrics(bold).horizontalAdvance(label) + 6
+            button.setStyleSheet(f"min-width: {max(75, text_width)}px;")
             nav_layout.addWidget(button)
 
         root.addWidget(navbar)
