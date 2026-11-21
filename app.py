@@ -1083,13 +1083,12 @@ class MainWindow(QMainWindow):
 
         # ---------------- Pembanding ----------------
         panel_compare = self.create_panel(
-            "Analisis tambahan — pembanding per lifecycle (BUKAN jawaban soal)"
+            "Analisis tambahan — pembanding per lifecycle"
         )
         compare_note = QLabel(
             "Tabel ini menunjukkan mengapa pembatasan lifecycle penting. Buku FBPM (Solution "
             "11.15/11.18) melaporkan Celonis 13 dan 3 case (complete saja), sedangkan Disco 20 "
-            "dan 8 case karena ikut menghitung event schedule/start/abort. Baris 'complete' "
-            "adalah aturan yang dipakai untuk jawaban."
+            "dan 8 case karena ikut menghitung event schedule/start/abort."
         )
         compare_note.setWordWrap(True)
         compare_note.setStyleSheet("color: #4A5568; background: transparent;")
@@ -1744,7 +1743,7 @@ class MainWindow(QMainWindow):
             for _, row in ex_1518["per_case"].iterrows()
         ])
         self.fill_table(self.table_1518_compare, [
-            [str(row["lifecycle"]) + ("  ← aturan jawaban" if row["lifecycle"] == "complete" else ""),
+            [str(row["lifecycle"]) + (" " if row["lifecycle"] == "complete" else ""),
              f"{row['event_count']:,}", f"{row['cases_with_event']:,}",
              f"{row['cases_min_occurrences']:,}",
              f"{row['cases_min_same_resource']:,}" if result["resource_available"] else "N/A"]
@@ -1889,6 +1888,10 @@ class MainWindow(QMainWindow):
         cases_1518 = ex_1518["per_case"].assign(Kode="11.18")
         cases = pd.concat([cases_1515, cases_1518], ignore_index=True)
         cases = cases[["Kode"] + [c for c in cases.columns if c != "Kode"]]
+        # Kolom jumlah tetap bilangan bulat walau kosong pada baris 11.18.
+        for column in ("complete_count", "target_events_all_lifecycle"):
+            if column in cases:
+                cases[column] = cases[column].astype("Int64")
 
         evidence = pd.concat([
             ex_1515["evidence"].assign(Kode="11.15"),
