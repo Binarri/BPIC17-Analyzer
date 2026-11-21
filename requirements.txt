@@ -2,3 +2,4 @@ pm4py==2.7.23.12
 pandas==3.1.1
 PySide6
 matplotlib
+pytest
