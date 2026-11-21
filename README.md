@@ -54,24 +54,21 @@ BPIC17-Analyzer/
 ├── requirements.txt
 ├── README.md
 ├── .gitignore
-│
 ├── modules/
 │   ├── __init__.py
 │   ├── importer.py
 │   ├── overview.py
 │   ├── exercise_11_7_ab.py
 │   ├── exercise_11_7_ce.py
-│   └── exercise_11_15_18.py
-│
-├── tests/
-│   ├── test_importer.py
-│   ├── test_overview.py
-│   ├── test_exercise_11_7_ab.py
-│   ├── test_exercise_11_7_ce.py
-│   └── test_exercise_11_15_18.py
-│
-└── assets/
-    └── ...
+│   ├── exercise_11_15_18.py
+│   └── exercise_11_22.py
+└── tests/
+    ├── test_importer.py
+    ├── test_overview.py
+    ├── test_exercise_11_7_ab.py
+    ├── test_exercise_11_7_ce.py
+    ├── test_exercise_11_15_18.py
+    └── test_exercise_11_22.py
 ```
 
 Keterangan:
