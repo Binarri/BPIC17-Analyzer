@@ -60,13 +60,15 @@ BPIC17-Analyzer/
 │   ├── importer.py
 │   ├── overview.py
 │   ├── exercise_11_7_ab.py
-│   └── exercise_11_7_ce.py
+│   ├── exercise_11_7_ce.py
+│   └── exercise_11_15_18.py
 │
 ├── tests/
 │   ├── test_importer.py
 │   ├── test_overview.py
 │   ├── test_exercise_11_7_ab.py
-│   └── test_exercise_11_7_ce.py
+│   ├── test_exercise_11_7_ce.py
+│   └── test_exercise_11_15_18.py
 │
 └── assets/
     └── ...
@@ -144,9 +146,18 @@ Beberapa ketentuan yang digunakan dalam pengembangan aplikasi:
 - Analisis same resource mensyaratkan resource yang sama dan teridentifikasi.
 - Analisis eventually follows memperhatikan urutan event dalam trace, tanpa mengharuskan kedua event bersebelahan.
 
+### Exercise 11.15 dan 11.18 (Annis)
+
+- **Aktivitas target:** pada file BPIC17 ejaannya `W_Assess potential fraud` (huruf kecil), berbeda dengan teks soal `W_Assess Potential Fraud`. Aplikasi menyediakan dropdown berisi semua aktivitas di log dan memilih target secara otomatis dengan pencocokan yang tidak membedakan huruf besar/kecil.
+- **Complete occurrence:** event dengan `lifecycle:transition` = `complete` (dibandingkan setelah di-trim dan di-lowercase). Lifecycle lain pada BPIC17 (`schedule`, `start`, `suspend`, `resume`, `ate_abort`, `withdraw`) tidak dihitung.
+- **11.15:** case dipilih jika aktivitas target memiliki minimal 2 complete occurrence. Case dihitung satu kali.
+- **11.18:** dari case 11.15, minimal 2 complete occurrence dilakukan oleh `org:resource` yang sama. Resource kosong, spasi, atau `UNKNOWN` (nilai default global attribute BPIC17) dianggap tidak teridentifikasi dan tidak pernah dianggap sama.
+- **Bukti:** tabel case terpilih, seluruh event aktivitas target per case beserta posisinya di trace dan penanda *Dihitung*, serta resource ID untuk 11.18.
+- **Pembanding (bukan jawaban soal):** jumlah case per lifecycle dan tanpa filter lifecycle, untuk menjelaskan selisih dengan Disco (20 dan 8 case) pada buku. Celonis (complete saja) melaporkan 13 dan 3 case.
+
 ## Pengujian
 
-Unit test untuk importer, overview, dan Exercise 11.7 A–E menggunakan log sintetis agar aturan analisis dapat diuji secara terkontrol. Jalankan dari folder utama proyek:
+Unit test untuk importer, overview, Exercise 11.7 A–E, serta Exercise 11.15 dan 11.18 menggunakan log sintetis agar aturan analisis dapat diuji secara terkontrol. Jalankan dari folder utama proyek:
 
 ```bash
 python -m pytest tests -v

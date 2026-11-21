@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QScrollArea,
     QDialog,
+    QComboBox,
 )
 
 from matplotlib.figure import Figure
@@ -50,6 +51,11 @@ from modules.exercise_11_7_ab import (
     summarize_cases,
 )
 from modules.exercise_11_7_ce import analyze_117_ce
+from modules.exercise_11_15_18 import (
+    analyze_1115_1118,
+    detect_target_activity,
+    list_activities,
+)
 
 DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 
@@ -243,6 +249,24 @@ class Exercise117CEWorker(QThread):
             self.failed.emit(f"{type(error).__name__}: {error}")
 
 
+class Exercise1518Worker(QThread):
+    """Menghitung Exercise 11.15 & 11.18 di background thread (Annis)."""
+
+    succeeded = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, dataframe, activity):
+        super().__init__()
+        self.dataframe = dataframe
+        self.activity = activity
+
+    def run(self):
+        try:
+            self.succeeded.emit(analyze_1115_1118(self.dataframe, self.activity))
+        except Exception as error:
+            self.failed.emit(f"{type(error).__name__}: {error}")
+
+
 class Exercise117Worker(QThread):
     """Menghitung 11.7 A-B di background thread."""
 
@@ -288,6 +312,8 @@ class MainWindow(QMainWindow):
         self.case_data = None
         self.result_117 = None      # hasil analisis 11.7 A-B yang sedang tampil
         self.result_117_ce = None   # hasil analisis 11.7 C-E milik Hana
+        self.worker_1518 = None
+        self.result_1518 = None     # hasil analisis 11.15 & 11.18 milik Annis
         self._case_groups = None    # cache: case ID -> posisi baris di dataframe
 
         self.build_interface()
@@ -332,10 +358,10 @@ class MainWindow(QMainWindow):
         self.nav_overview.clicked.connect(lambda: self.show_page(0))
         self.nav_dataset.clicked.connect(lambda: self.show_page(1))
         self.nav_117.clicked.connect(lambda: self.show_page(2))
+        self.nav_1518.clicked.connect(lambda: self.show_page(3))
 
         # Fitur anggota lain (diaktifkan saat modulnya digabung)
         placeholders = (
-            (self.nav_1518, "Reserved: Exercise 11.15 & 11.18 (Binar)"),
             (self.nav_1122, "Reserved: Exercise 11.22 (Kayla)"),
             (self.nav_explorer, "Reserved: Case Explorer (Kayla)"),
         )
@@ -369,10 +395,12 @@ class MainWindow(QMainWindow):
         self.overview_page = self.create_overview_page()
         self.dataset_page = self.create_dataset_page()
         self.exercise_117_page = self.create_exercise_117_page()
+        self.exercise_1518_page = self.create_exercise_1518_page()
 
         self.pages.addWidget(self.overview_page)       # index 0
         self.pages.addWidget(self.dataset_page)        # index 1
         self.pages.addWidget(self.exercise_117_page)   # index 2
+        self.pages.addWidget(self.exercise_1518_page)  # index 3
 
         body.addWidget(self.pages, 1)
         root.addLayout(body)
@@ -445,10 +473,11 @@ class MainWindow(QMainWindow):
             QPushButton:hover { background-color: #40566D; }
             QPushButton:disabled { background-color: #AAB4C0; }
 
-            QLineEdit {
+            QLineEdit, QComboBox {
                 background-color: white; border: 1px solid #C9D2DD;
                 padding: 8px; border-radius: 4px;
             }
+            QComboBox:disabled { color: #AAB4C0; }
 
             QListWidget, QTableView {
                 background-color: white; alternate-background-color: #F0F3F7;
@@ -548,6 +577,7 @@ class MainWindow(QMainWindow):
         self.nav_overview.setChecked(index == 0)
         self.nav_dataset.setChecked(index == 1)
         self.nav_117.setChecked(index == 2)
+        self.nav_1518.setChecked(index == 3)
 
     # ------------------------------------------------------------------
     # KOMPONEN BERSAMA
@@ -882,6 +912,203 @@ class MainWindow(QMainWindow):
         return page
 
     # ------------------------------------------------------------------
+    # EXERCISE 11.15 & 11.18 PAGE (Annis) - F04, F05
+    # ------------------------------------------------------------------
+    def create_simple_table(self, headers, min_height, on_double_click=None):
+        """QTableWidget read-only dengan header (dipakai halaman 11.15 & 11.18)."""
+        table = QTableWidget(0, len(headers))
+        table.setHorizontalHeaderLabels(headers)
+        table.setAlternatingRowColors(True)
+        table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        table.verticalHeader().setDefaultSectionSize(25)
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        table.setMinimumHeight(min_height)
+        if on_double_click is not None:
+            table.doubleClicked.connect(on_double_click)
+        return table
+
+    @staticmethod
+    def fill_table(table, rows):
+        """Isi QTableWidget dari list of list (nilai sudah berupa teks)."""
+        table.setUpdatesEnabled(False)
+        try:
+            table.clearContents()
+            table.setRowCount(len(rows))
+            for row_index, values in enumerate(rows):
+                for column, value in enumerate(values):
+                    cell = QTableWidgetItem(value)
+                    cell.setToolTip(value)  # teks panjang tetap terbaca utuh
+                    table.setItem(row_index, column, cell)
+        finally:
+            table.setUpdatesEnabled(True)
+
+    def create_exercise_1518_page(self):
+        page = QWidget()
+        page_layout = QVBoxLayout(page)
+        page_layout.setContentsMargins(0, 0, 0, 0)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(9)
+
+        heading = QLabel("Exercise 11.15 & 11.18")
+        heading.setStyleSheet("font-size: 17px; font-weight: bold;")
+        layout.addWidget(heading)
+
+        rules = QLabel(
+            "11.15: case di mana aktivitas target diselesaikan minimal 2× — hanya event dengan "
+            "lifecycle:transition = complete yang dihitung (schedule, start, suspend, resume, "
+            "ate_abort, withdraw diabaikan).\n"
+            "11.18: dari case 11.15, minimal 2 complete occurrence dilakukan oleh org:resource "
+            "yang sama. Resource kosong/UNKNOWN tidak pernah dianggap sebagai resource yang sama.\n"
+            "Setiap case dihitung satu kali; tidak ada event yang dihapus dari trace. Catatan: "
+            "pada BPIC17 ejaan aktivitasnya 'W_Assess potential fraud' (huruf kecil), sehingga "
+            "aktivitas target dipilih dari daftar aktivitas log dengan deteksi otomatis."
+        )
+        rules.setWordWrap(True)
+        rules.setStyleSheet("color: #4A5568; font-style: italic; margin-bottom: 6px;")
+        layout.addWidget(rules)
+
+        # Pilihan aktivitas + tombol aksi
+        action_layout = QHBoxLayout()
+        activity_label = QLabel("Aktivitas target:")
+        activity_label.setStyleSheet("background: transparent;")
+        action_layout.addWidget(activity_label)
+
+        self.activity_1518_combo = QComboBox()
+        self.activity_1518_combo.setEnabled(False)
+        self.activity_1518_combo.setMinimumWidth(280)
+        action_layout.addWidget(self.activity_1518_combo, 1)
+
+        self.run_1518_button = QPushButton("Hitung 11.15 && 11.18")  # && = '&' literal
+        self.run_1518_button.setEnabled(False)
+        self.run_1518_button.clicked.connect(self.run_exercise_1518)
+        action_layout.addWidget(self.run_1518_button)
+
+        self.reset_1518_button = QPushButton("Reset")
+        self.reset_1518_button.setEnabled(False)
+        self.reset_1518_button.clicked.connect(self.reset_1518)
+        action_layout.addWidget(self.reset_1518_button)
+
+        self.export_1518_button = QPushButton("Export to CSV")
+        self.export_1518_button.setEnabled(False)
+        self.export_1518_button.clicked.connect(self.export_1518_csv)
+        action_layout.addWidget(self.export_1518_button)
+        layout.addLayout(action_layout)
+
+        self.progress_1518 = QProgressBar()
+        self.progress_1518.setRange(0, 1)
+        self.progress_1518.setVisible(False)
+        layout.addWidget(self.progress_1518)
+
+        self.status_1518 = QLabel("Status: Impor dataset terlebih dahulu.")
+        self.status_1518.setWordWrap(True)
+        self.status_1518.setStyleSheet("color: #718096;")
+        layout.addWidget(self.status_1518)
+
+        metrics_layout = QGridLayout()
+        metrics_layout.setSpacing(10)
+        self.metric_1515_cases = self.create_metric_card(
+            metrics_layout, 0, "11.15 — Case complete ≥ 2×"
+        )
+        self.metric_1518_cases = self.create_metric_card(
+            metrics_layout, 1, "11.18 — Case resource sama"
+        )
+        self.metric_1518_events = self.create_metric_card(
+            metrics_layout, 2, "Event target (semua / complete)"
+        )
+        self.metric_1518_total = self.create_metric_card(
+            metrics_layout, 3, "Total case log aktif"
+        )
+        for column in range(4):
+            metrics_layout.setColumnStretch(column, 1)
+        layout.addLayout(metrics_layout)
+
+        # ---------------- 11.15 ----------------
+        panel_1515 = self.create_panel(
+            "11.15 — Case terpilih (klik untuk melihat bukti event, double-click untuk seluruh trace)"
+        )
+        self.table_1515_cases = self.create_simple_table(
+            ["Case ID", "Jumlah complete", "Semua event target", "Rincian lifecycle"],
+            170,
+            self.open_1518_case_detail,
+        )
+        self.table_1515_cases.itemSelectionChanged.connect(
+            lambda: self.show_1518_evidence("ex_1115")
+        )
+        panel_1515.layout().addWidget(self.table_1515_cases)
+
+        evidence_note = QLabel(
+            "Bukti event 11.15: seluruh event aktivitas target pada case terpilih. "
+            "Kolom 'Dihitung' = Ya hanya untuk lifecycle complete."
+        )
+        evidence_note.setWordWrap(True)
+        evidence_note.setStyleSheet("color: #4A5568; background: transparent;")
+        panel_1515.layout().addWidget(evidence_note)
+
+        self.table_1515_evidence = self.create_simple_table(
+            ["Posisi di trace", "Timestamp", "Activity", "Lifecycle", "Resource", "Dihitung"],
+            200,
+        )
+        panel_1515.layout().addWidget(self.table_1515_evidence)
+        layout.addWidget(panel_1515)
+
+        # ---------------- 11.18 ----------------
+        panel_1518 = self.create_panel(
+            "11.18 — Case dengan resource sama (klik untuk bukti, double-click untuk seluruh trace)"
+        )
+        self.table_1518_cases = self.create_simple_table(
+            ["Case ID", "Resource ID", "Jumlah complete oleh resource"],
+            120,
+            self.open_1518_case_detail,
+        )
+        self.table_1518_cases.itemSelectionChanged.connect(
+            lambda: self.show_1518_evidence("ex_1118")
+        )
+        panel_1518.layout().addWidget(self.table_1518_cases)
+
+        self.table_1518_evidence = self.create_simple_table(
+            ["Posisi di trace", "Timestamp", "Activity", "Lifecycle", "Resource", "Dihitung"],
+            120,
+        )
+        panel_1518.layout().addWidget(self.table_1518_evidence)
+        layout.addWidget(panel_1518)
+
+        # ---------------- Pembanding ----------------
+        panel_compare = self.create_panel(
+            "Analisis tambahan — pembanding per lifecycle (BUKAN jawaban soal)"
+        )
+        compare_note = QLabel(
+            "Tabel ini menunjukkan mengapa pembatasan lifecycle penting. Buku FBPM (Solution "
+            "11.15/11.18) melaporkan Celonis 13 dan 3 case (complete saja), sedangkan Disco 20 "
+            "dan 8 case karena ikut menghitung event schedule/start/abort. Baris 'complete' "
+            "adalah aturan yang dipakai untuk jawaban."
+        )
+        compare_note.setWordWrap(True)
+        compare_note.setStyleSheet("color: #4A5568; background: transparent;")
+        panel_compare.layout().addWidget(compare_note)
+
+        self.table_1518_compare = self.create_simple_table(
+            ["Lifecycle", "Jumlah event", "Case memuat event", "Case ≥ 2 event",
+             "Case ≥ 2 oleh resource sama"],
+            265,
+        )
+        panel_compare.layout().addWidget(self.table_1518_compare)
+        layout.addWidget(panel_compare)
+
+        layout.addStretch()
+        scroll.setWidget(content)
+        page_layout.addWidget(scroll)
+        return page
+
+    # ------------------------------------------------------------------
     # DATASET PAGE - F01
     # ------------------------------------------------------------------
     def create_dataset_page(self):
@@ -1002,6 +1229,9 @@ class MainWindow(QMainWindow):
         self.status_117_ce.setText(
             f"Status: Dataset siap ({imported['total_cases']:,} case). Klik Hitung 11.7 C–E."
         )
+
+        # Exercise 11.15 & 11.18: isi daftar aktivitas, deteksi target otomatis
+        self.prepare_1518(imported)
 
     def import_failed(self, message):
         self.status_label.setText("Status: Import failed")
@@ -1426,6 +1656,260 @@ class MainWindow(QMainWindow):
             return
 
         QMessageBox.information(self, "Sukses", "Evidence 11.7 C–E berhasil diekspor.")
+
+    # ------------------------------------------------------------------
+    # EXERCISE 11.15 & 11.18 HANDLERS (Annis)
+    # ------------------------------------------------------------------
+    def prepare_1518(self, imported):
+        """Dipanggil setelah impor: isi dropdown aktivitas dan reset hasil lama."""
+        self.reset_1518(clear_status=False)
+        dataframe = imported["dataframe"]
+
+        self.activity_1518_combo.clear()
+        self.activity_1518_combo.addItems(list_activities(dataframe))
+        detected = detect_target_activity(dataframe)
+        if detected is not None:
+            self.activity_1518_combo.setCurrentText(detected)
+
+        has_lifecycle = "lifecycle:transition" in imported["available_optional"]
+        self.activity_1518_combo.setEnabled(True)
+        self.run_1518_button.setEnabled(has_lifecycle)
+
+        if not has_lifecycle:
+            self.status_1518.setText(
+                "Status: Atribut lifecycle:transition tidak tersedia — complete occurrence "
+                "tidak dapat diidentifikasi, 11.15 & 11.18 tidak dapat dihitung."
+            )
+        elif detected is None:
+            self.status_1518.setText(
+                "Status: 'W_Assess Potential Fraud' tidak ditemukan otomatis. "
+                "Pilih aktivitas target secara manual, lalu klik Hitung."
+            )
+        else:
+            self.status_1518.setText(
+                f"Status: Dataset siap. Aktivitas target terdeteksi: '{detected}'. "
+                "Klik Hitung 11.15 & 11.18."
+            )
+
+    def run_exercise_1518(self):
+        if self.active_data is None:
+            QMessageBox.warning(self, "Dataset Belum Ada", "Impor dataset XES terlebih dahulu.")
+            return
+        activity = self.activity_1518_combo.currentText()
+        if not activity:
+            QMessageBox.warning(self, "Aktivitas Belum Dipilih", "Pilih aktivitas target.")
+            return
+
+        self.reset_1518(clear_status=False)
+        self.run_1518_button.setEnabled(False)
+        self.activity_1518_combo.setEnabled(False)
+        self.progress_1518.setVisible(True)
+        self.progress_1518.setRange(0, 0)
+        self.status_1518.setText(f"Status: Menghitung 11.15 & 11.18 untuk '{activity}'...")
+
+        dataframe = self.active_data["import"]["dataframe"]
+        self.worker_1518 = Exercise1518Worker(dataframe, activity)
+        self.worker_1518.succeeded.connect(self.on_1518_succeeded)
+        self.worker_1518.failed.connect(self.on_1518_failed)
+        self.worker_1518.finished.connect(self.on_1518_finished)
+        self.worker_1518.start()
+
+    @staticmethod
+    def _text(value):
+        return str(value) if pd_not_null(value) else "-"
+
+    def on_1518_succeeded(self, result):
+        self.result_1518 = result
+        ex_1515 = result["ex_1115"]
+        ex_1518 = result["ex_1118"]
+        total_cases = result["total_cases_log"]
+        comparison = result["comparison"]
+        complete_rows = comparison.loc[comparison["lifecycle"] == "complete", "event_count"]
+        complete_events = int(complete_rows.iloc[0]) if not complete_rows.empty else 0
+
+        self.metric_1515_cases.setText(f"{ex_1515['total_cases']:,}")
+        self.metric_1518_cases.setText(
+            f"{ex_1518['total_cases']:,}" if result["resource_available"] else "N/A"
+        )
+        self.metric_1518_events.setText(f"{result['target_events']:,} / {complete_events:,}")
+        self.metric_1518_total.setText(f"{total_cases:,}")
+
+        self.fill_table(self.table_1515_cases, [
+            [str(row.iloc[0]), str(row["complete_count"]),
+             str(row["target_events_all_lifecycle"]), str(row["lifecycle_detail"])]
+            for _, row in ex_1515["per_case"].iterrows()
+        ])
+        self.fill_table(self.table_1518_cases, [
+            [str(row.iloc[0]), self._text(row["org:resource"]), str(row["complete_count"])]
+            for _, row in ex_1518["per_case"].iterrows()
+        ])
+        self.fill_table(self.table_1518_compare, [
+            [str(row["lifecycle"]) + ("  ← aturan jawaban" if row["lifecycle"] == "complete" else ""),
+             f"{row['event_count']:,}", f"{row['cases_with_event']:,}",
+             f"{row['cases_min_occurrences']:,}",
+             f"{row['cases_min_same_resource']:,}" if result["resource_available"] else "N/A"]
+            for _, row in result["comparison"].iterrows()
+        ])
+
+        # Tampilkan bukti case pertama secara otomatis
+        if self.table_1515_cases.rowCount():
+            self.table_1515_cases.selectRow(0)
+        if self.table_1518_cases.rowCount():
+            self.table_1518_cases.selectRow(0)
+
+        resource_note = (
+            f"{ex_1518['unidentified_resource_events']:,} complete event tanpa resource "
+            "teridentifikasi diabaikan pada 11.18."
+            if result["resource_available"]
+            else "org:resource tidak tersedia sehingga 11.18 tidak dapat dihitung."
+        )
+        self.status_1518.setText(
+            f"Status: Selesai untuk '{result['activity']}'. "
+            f"11.15: {ex_1515['total_cases']:,} dari {total_cases:,} case. "
+            f"11.18: {ex_1518['total_cases']:,} dari {total_cases:,} case. {resource_note}"
+        )
+        self.export_1518_button.setEnabled(True)
+
+    def show_1518_evidence(self, key):
+        """Isi tabel bukti untuk case yang dipilih pada tabel 11.15 / 11.18."""
+        if self.result_1518 is None:
+            return
+        if key == "ex_1115":
+            case_table, evidence_table = self.table_1515_cases, self.table_1515_evidence
+        else:
+            case_table, evidence_table = self.table_1518_cases, self.table_1518_evidence
+
+        row = case_table.currentRow()
+        item = case_table.item(row, 0) if row >= 0 else None
+        if item is None:
+            evidence_table.setRowCount(0)
+            return
+
+        evidence = self.result_1518[key]["evidence"]
+        selected = evidence[evidence[CASE_COLUMN].astype(str) == item.text()]
+        if key == "ex_1118":
+            resource = case_table.item(row, 1).text()
+            selected = selected[selected["org:resource"].astype(str) == resource]
+
+        timestamps = format_datetime_series(selected[TIMESTAMP_COLUMN]).tolist()
+        self.fill_table(evidence_table, [
+            [self._text(event["trace_position"]), timestamp,
+             self._text(event["concept:name"]), self._text(event["lifecycle:transition"]),
+             self._text(event["org:resource"]), "Ya" if event["counted"] else "Tidak"]
+            for timestamp, (_, event) in zip(timestamps, selected.iterrows())
+        ])
+
+    def open_1518_case_detail(self, index):
+        if self.active_data is None or not index.isValid():
+            return
+        table = self.sender()
+        item = table.item(index.row(), 0) if table is not None else None
+        if item is not None:
+            self.open_case_detail(item.text())
+
+    def on_1518_failed(self, message):
+        self.status_1518.setText("Status: Analisis 11.15 & 11.18 gagal.")
+        QMessageBox.critical(self, "Analisis 11.15 & 11.18 Gagal", message)
+
+    def on_1518_finished(self):
+        self.progress_1518.setVisible(False)
+        self.progress_1518.setRange(0, 1)
+        self.activity_1518_combo.setEnabled(self.active_data is not None)
+        self.run_1518_button.setEnabled(
+            self.active_data is not None
+            and "lifecycle:transition" in self.active_data["import"]["available_optional"]
+        )
+        self.reset_1518_button.setEnabled(self.result_1518 is not None)
+
+    def reset_1518(self, clear_status=True):
+        """Kosongkan hasil 11.15 & 11.18 (log tetap aktif, bisa dihitung ulang)."""
+        self.result_1518 = None
+        for label in (
+            self.metric_1515_cases, self.metric_1518_cases,
+            self.metric_1518_events, self.metric_1518_total,
+        ):
+            label.setText("-")
+        for table in (
+            self.table_1515_cases, self.table_1515_evidence,
+            self.table_1518_cases, self.table_1518_evidence, self.table_1518_compare,
+        ):
+            table.setRowCount(0)
+        self.export_1518_button.setEnabled(False)
+        self.reset_1518_button.setEnabled(False)
+        if clear_status:
+            self.status_1518.setText(
+                "Status: Impor dataset terlebih dahulu."
+                if self.active_data is None
+                else "Status: Hasil direset. Klik Hitung 11.15 & 11.18 untuk menghitung ulang."
+            )
+
+    def export_1518_csv(self):
+        if self.result_1518 is None:
+            QMessageBox.warning(self, "Belum Ada Data", "Jalankan analisis terlebih dahulu.")
+            return
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Simpan Hasil 11.15 & 11.18", "hasil_11_15_18.csv", "CSV Files (*.csv)"
+        )
+        if not file_path:
+            return
+
+        summary_path = Path(file_path).with_suffix(".csv")
+        cases_path = summary_path.with_name(summary_path.stem + "_case.csv")
+        evidence_path = summary_path.with_name(summary_path.stem + "_evidence.csv")
+
+        result = self.result_1518
+        ex_1515, ex_1518 = result["ex_1115"], result["ex_1118"]
+        total = result["total_cases_log"]
+        dataset_name = self.active_data["import"]["file_name"]
+
+        summary_rows = [
+            ["Dataset", "File aktif", dataset_name, "", ""],
+            ["Dataset", "Aktivitas target", result["activity"], "", ""],
+            ["11.15", "Case dengan aktivitas target complete minimal 2x",
+             ex_1515["total_cases"], "case", f"{ex_1515['rule']} Denominator log = {total} case."],
+            ["11.18", "Case dengan minimal 2 complete oleh resource yang sama",
+             ex_1518["total_cases"], "case", f"{ex_1518['rule']} Denominator log = {total} case."],
+            ["Info", "Complete event tanpa resource teridentifikasi (11.18)",
+             ex_1518["unidentified_resource_events"], "event",
+             "Tidak dianggap sebagai resource yang sama"],
+        ]
+        for _, row in result["comparison"].iterrows():
+            summary_rows.append([
+                "Pembanding (bukan jawaban)", f"Lifecycle: {row['lifecycle']}",
+                row["cases_min_occurrences"], "case ≥2 event",
+                f"event={row['event_count']}; case memuat={row['cases_with_event']}; "
+                f"case ≥2 resource sama={row['cases_min_same_resource']}",
+            ])
+        summary = pd.DataFrame(
+            summary_rows, columns=["Kode", "Pertanyaan", "Hasil", "Satuan", "Aturan / Denominator"]
+        )
+
+        cases_1515 = ex_1515["per_case"].assign(Kode="11.15")
+        cases_1518 = ex_1518["per_case"].assign(Kode="11.18")
+        cases = pd.concat([cases_1515, cases_1518], ignore_index=True)
+        cases = cases[["Kode"] + [c for c in cases.columns if c != "Kode"]]
+
+        evidence = pd.concat([
+            ex_1515["evidence"].assign(Kode="11.15"),
+            ex_1518["evidence"].assign(Kode="11.18"),
+        ], ignore_index=True)
+        evidence = evidence[["Kode"] + [c for c in evidence.columns if c != "Kode"]]
+
+        try:
+            summary.to_csv(summary_path, index=False)
+            cases.to_csv(cases_path, index=False)
+            evidence.to_csv(evidence_path, index=False)
+        except Exception as error:
+            QMessageBox.critical(self, "Gagal", f"Gagal menyimpan file: {error}")
+            return
+
+        QMessageBox.information(
+            self,
+            "Sukses",
+            f"Ringkasan jawaban:\n{summary_path}\n\nDaftar case:\n{cases_path}\n\n"
+            f"Bukti event:\n{evidence_path}",
+        )
 
     # ABOUT
     # ------------------------------------------------------------------
